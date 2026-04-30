@@ -110,6 +110,7 @@ html, body { height: 100%; margin: 0; }
   </div>
 
   <script>
+const API_BASE = 'https://nexusbackend-vpu0.onrender.com';
 let tools = [];
 let logoDataUrl = '';
   // Country list for per-country pricing (used when Category = Numbers)
@@ -135,6 +136,84 @@ let logoDataUrl = '';
     });
   }
 
+  function showToast(message, success = true) {
+    const toast = document.createElement('div');
+    toast.className = 'fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg text-sm shadow-lg animate-fade-in';
+    toast.style.background = success ? '#16a34a' : '#dc2626';
+    toast.style.color = '#fff';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+  }
+
+  async function apiFetch(path, options = {}) {
+    const url = `${API_BASE}${path}`;
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || response.statusText);
+    }
+    return response.json();
+  }
+
+  async function loadTools() {
+    try {
+      tools = await apiFetch('/api/tools');
+      renderToolsList();
+    } catch (error) {
+      console.error('Failed to load tools:', error);
+      showToast('Could not load tools from backend.', false);
+    }
+  }
+
+  function renderToolsList() {
+    const list = document.getElementById('toolsList');
+    if (!list) return;
+    
+    list.innerHTML = '';
+    
+    if (tools.length === 0) {
+      list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No tools added yet</p>';
+      return;
+    }
+    
+    tools.forEach((tool) => {
+      const toolEl = document.createElement('div');
+      toolEl.style.background = 'var(--bg)';
+      toolEl.className = 'p-4 rounded-lg border border-opacity-10 flex items-center justify-between';
+      toolEl.style.borderColor = 'var(--secondary)';
+      toolEl.innerHTML = `
+        <div class="flex items-center gap-4 flex-1">
+          ${tool.logo ? `<img src="${tool.logo}" alt="${tool.name}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">` : '<div style="width:60px;height:60px;border-radius:8px;background:var(--surface)"></div>'}
+          <div>
+            <h3 style="color:var(--text)" class="font-semibold text-sm">${tool.name}</h3>
+            <p style="color:var(--secondary)" class="text-xs opacity-75">${tool.cat} • ${tool.price}</p>
+            <p style="color:var(--secondary)" class="text-xs opacity-50 mt-1">${tool.desc}</p>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button class="delete-tool px-3 py-1.5 rounded text-xs font-medium" style="background:#dc2626;color:white" data-id="${tool.id}">Delete</button>
+        </div>
+      `;
+      list.appendChild(toolEl);
+    });
+    
+    document.querySelectorAll('.delete-tool').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        if (!id || !confirm('Delete this tool?')) return;
+        try {
+          await apiFetch(`/api/tools/${id}`, { method: 'DELETE' });
+          showToast('Tool deleted');
+          loadTools();
+        } catch (err) {
+          console.error(err);
+          showToast('Unable to delete tool', false);
+        }
+      });
+    });
+  }
+
 // Handle logo file upload
 document.getElementById('toolLogo').addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -151,80 +230,23 @@ document.getElementById('toolLogo').addEventListener('change', (e) => {
   reader.readAsDataURL(file);
 });
 
-// Load tools from localStorage
-function loadToolsFromStorage() {
-  const stored = localStorage.getItem('aiToolsData');
-  if (stored) {
-    tools = JSON.parse(stored);
-  }
-}
-
-// Save tools to localStorage
-function saveToolsToStorage() {
-  localStorage.setItem('aiToolsData', JSON.stringify(tools));
-}
-
-// Render existing tools list
-function renderToolsList() {
-  const list = document.getElementById('toolsList');
-  if (!list) return;
-  
-  list.innerHTML = '';
-  
-  if (tools.length === 0) {
-    list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No tools added yet</p>';
-    return;
-  }
-  
-  tools.forEach((tool, idx) => {
-    const toolEl = document.createElement('div');
-    toolEl.style.background = 'var(--bg)';
-    toolEl.className = 'p-4 rounded-lg border border-opacity-10 flex items-center justify-between';
-    toolEl.style.borderColor = 'var(--secondary)';
-    
-    toolEl.innerHTML = `
-      <div class="flex items-center gap-4 flex-1">
-        ${tool.logo ? `<img src="${tool.logo}" alt="${tool.name}" style="width:60px;height:60px;border-radius:8px;object-fit:cover;">` : '<div style="width:60px;height:60px;border-radius:8px;background:var(--surface)"></div>'}
-        <div>
-          <h3 style="color:var(--text)" class="font-semibold text-sm">${tool.name}</h3>
-          <p style="color:var(--secondary)" class="text-xs opacity-75">${tool.cat} • ${tool.price}</p>
-          <p style="color:var(--secondary)" class="text-xs opacity-50 mt-1">${tool.desc}</p>
-        </div>
-      </div>
-      <div class="flex gap-2">
-        <button class="delete-tool px-3 py-1.5 rounded text-xs font-medium" style="background:#dc2626;color:white" data-idx="${idx}">Delete</button>
-      </div>
-    `;
-    
-    list.appendChild(toolEl);
-  });
-  
-  document.querySelectorAll('.delete-tool').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = parseInt(btn.dataset.idx);
-      tools.splice(idx, 1);
-      saveToolsToStorage();
-      renderToolsList();
-    });
-  });
-}
 
 // Form submission handler
-document.getElementById('addToolForm').addEventListener('submit', (e) => {
+document.getElementById('addToolForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   
-  const name = document.getElementById('toolName').value;
-  const price = document.getElementById('toolPrice').value;
-  const desc = document.getElementById('toolDesc').value;
+  const name = document.getElementById('toolName').value.trim();
+  const price = document.getElementById('toolPrice').value.trim();
+  const desc = document.getElementById('toolDesc').value.trim();
   const cat = document.getElementById('toolCategory').value;
   const rating = parseFloat(document.getElementById('toolRating').value);
-  const icon = document.getElementById('toolIcon').value;
+  const icon = document.getElementById('toolIcon').value.trim();
   const featuresText = document.getElementById('toolFeatures').value;
   
   const features = featuresText.split('\n').map(f => f.trim()).filter(f => f);
   
   if (!name || !price || !desc || !cat || !rating || !icon || features.length === 0 || !logoDataUrl) {
-    alert('Please fill in all fields including logo');
+    showToast('Please fill in all fields including logo', false);
     return;
   }
   
@@ -239,7 +261,6 @@ document.getElementById('addToolForm').addEventListener('submit', (e) => {
     logo: logoDataUrl
   };
 
-  // If category is Numbers, collect per-country prices from the editor
   if (cat === 'Numbers') {
     const mapping = {};
     document.querySelectorAll('#countryPricesContainer input[data-code]').forEach(inp => {
@@ -247,31 +268,35 @@ document.getElementById('addToolForm').addEventListener('submit', (e) => {
       if (v) mapping[inp.dataset.code] = v;
     });
     newTool.price_by_country = mapping;
-    // If no specific prices provided, leave price_by_country empty
   }
-  
-  tools.push(newTool);
-  saveToolsToStorage();
-  
-  document.getElementById('addToolForm').reset();
-  document.getElementById('logoPreview').classList.add('hidden');
-  logoDataUrl = '';
-  renderToolsList();
-  
-  alert('Tool added successfully!');
+
+  try {
+    await apiFetch('/api/tools', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTool)
+    });
+    document.getElementById('addToolForm').reset();
+    document.getElementById('logoPreview').classList.add('hidden');
+    logoDataUrl = '';
+    showToast('Tool added successfully');
+    loadTools();
+  } catch (error) {
+    console.error(error);
+    showToast('Failed to add tool', false);
+  }
 });
 
 // Back button handler
 document.getElementById('backFromAdminBtn').addEventListener('click', () => {
-  window.location.href = '../ai tool.html';
+  window.location.href = 'https://nexusdigital-mbwb.onrender.com';
 });
 
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
-  loadToolsFromStorage();
-  renderToolsList();
+  loadTools();
   lucide.createIcons();
-  // show/hide country price editor when category is changed
+
   const cat = document.getElementById('toolCategory');
   if (cat) {
     cat.addEventListener('change', (e) => {
