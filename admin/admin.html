@@ -105,6 +105,14 @@ html, body { height: 100%; margin: 0; }
             <!-- Tools will be rendered here -->
           </div>
         </div>
+
+        <!-- Payment Confirmations -->
+        <div style="background:var(--surface)" class="p-6 rounded-lg border border-opacity-10" style="border-color:var(--secondary)">
+          <h2 style="color:var(--text)" class="text-xl font-semibold mb-6">Payment Confirmations</h2>
+          <div id="paymentsList" class="space-y-3">
+            <!-- Pending payments will be rendered here -->
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -214,6 +222,98 @@ let logoDataUrl = '';
     });
   }
 
+  async function loadPendingPayments() {
+    try {
+      const payments = await apiFetch('/api/payment-confirm');
+      renderPaymentsList(payments);
+    } catch (error) {
+      console.error('Failed to load payments:', error);
+      const list = document.getElementById('paymentsList');
+      if (list) {
+        list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No pending payments or connection error</p>';
+      }
+    }
+  }
+
+  function renderPaymentsList(payments) {
+    const list = document.getElementById('paymentsList');
+    if (!list) return;
+    
+    list.innerHTML = '';
+    
+    if (!payments || payments.length === 0) {
+      list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No pending payments</p>';
+      return;
+    }
+    
+    payments.forEach((payment) => {
+      const paymentEl = document.createElement('div');
+      paymentEl.style.background = 'var(--bg)';
+      paymentEl.className = 'p-4 rounded-lg border border-opacity-10';
+      paymentEl.style.borderColor = 'var(--secondary)';
+      
+      const statusColor = payment.status === 'pending_admin_confirmation' ? '#f59e0b' : payment.status === 'confirmed' ? '#16a34a' : '#dc2626';
+      
+      paymentEl.innerHTML = `
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 style="color:var(--text)" class="font-semibold text-sm">${payment.user_email || 'Unknown'}</h3>
+            <p style="color:var(--secondary)" class="text-xs opacity-75">${payment.method || 'N/A'}</p>
+          </div>
+          <div style="background:${statusColor};color:white" class="px-3 py-1 rounded text-xs font-medium">${payment.status || 'pending'}</div>
+        </div>
+        <div style="color:var(--secondary)" class="text-xs space-y-1 mb-4">
+          <p><strong>Amount:</strong> $${payment.amount_usd}</p>
+          <p><strong>Wallet:</strong> ${payment.wallet_address || 'N/A'}</p>
+          <p><strong>Date:</strong> ${new Date(payment.created_at).toLocaleDateString()}</p>
+        </div>
+        <div class="flex gap-2" data-payment-id="${payment._id || payment.id}">
+          <button class="approve-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#16a34a;color:white">Approve</button>
+          <button class="reject-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#dc2626;color:white">Reject</button>
+        </div>
+      `;
+      list.appendChild(paymentEl);
+    });
+    
+    document.querySelectorAll('.approve-payment').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const paymentId = btn.parentElement.dataset.paymentId;
+        if (!paymentId) return;
+        try {
+          await apiFetch(`/api/payment-confirm/${paymentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'confirmed' })
+          });
+          showToast('Payment approved');
+          loadPendingPayments();
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to approve payment', false);
+        }
+      });
+    });
+
+    document.querySelectorAll('.reject-payment').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const paymentId = btn.parentElement.dataset.paymentId;
+        if (!paymentId) return;
+        try {
+          await apiFetch(`/api/payment-confirm/${paymentId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'rejected' })
+          });
+          showToast('Payment rejected');
+          loadPendingPayments();
+        } catch (err) {
+          console.error(err);
+          showToast('Failed to reject payment', false);
+        }
+      });
+    });
+  }
+
 // Handle logo file upload
 document.getElementById('toolLogo').addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -295,6 +395,7 @@ document.getElementById('backFromAdminBtn').addEventListener('click', () => {
 // Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
   loadTools();
+  loadPendingPayments();
   lucide.createIcons();
 
   const cat = document.getElementById('toolCategory');
