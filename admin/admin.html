@@ -123,8 +123,11 @@ html, body { height: 100%; margin: 0; }
         </div>
 
         <!-- Payment Confirmations -->
-        <div style="background:var(--surface)" class="p-6 rounded-lg border border-opacity-10" style="border-color:var(--secondary)">
-          <h2 style="color:var(--text)" class="text-xl font-semibold mb-6">Payment Confirmations</h2>
+        <div style="background:var(--surface)" class="p-6 rounded-lg border border-opacity-10 mb-8" style="border-color:var(--secondary)">
+          <div class="flex items-center justify-between mb-6">
+            <h2 style="color:var(--text)" class="text-xl font-semibold">💰 Payment Confirmations</h2>
+            <span id="pendingPaymentsBadge" style="background:#f59e0b;color:white" class="px-3 py-1 rounded-full text-xs font-bold hidden">0 Pending</span>
+          </div>
           <div id="paymentsList" class="space-y-3">
             <!-- Pending payments will be rendered here -->
           </div>
@@ -324,19 +327,31 @@ let logoDataUrl = '';
       console.error('Failed to load payments:', error);
       const list = document.getElementById('paymentsList');
       if (list) {
-        list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No pending payments or connection error</p>';
+        list.innerHTML = '<p style="color:#dc2626" class="text-center py-8">❌ Error loading payments. Make sure backend is running.</p>';
       }
     }
   }
 
   function renderPaymentsList(payments) {
     const list = document.getElementById('paymentsList');
+    const badge = document.getElementById('pendingPaymentsBadge');
     if (!list) return;
     
     list.innerHTML = '';
     
+    // Count pending payments
+    const pendingCount = payments ? payments.filter(p => p.status === 'pending_admin_confirmation').length : 0;
+    if (badge) {
+      if (pendingCount > 0) {
+        badge.textContent = `${pendingCount} Pending`;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+    
     if (!payments || payments.length === 0) {
-      list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">No pending payments</p>';
+      list.innerHTML = '<p style="color:var(--secondary)" class="text-center py-8">✓ No pending payments</p>';
       return;
     }
     
@@ -351,19 +366,20 @@ let logoDataUrl = '';
       paymentEl.innerHTML = `
         <div class="flex items-center justify-between mb-3">
           <div>
-            <h3 style="color:var(--text)" class="font-semibold text-sm">${payment.user_email || 'Unknown'}</h3>
+            <h3 style="color:var(--text)" class="font-semibold text-sm">${payment.user_email || 'Anonymous'}</h3>
             <p style="color:var(--secondary)" class="text-xs opacity-75">${payment.method || 'N/A'}</p>
           </div>
-          <div style="background:${statusColor};color:white" class="px-3 py-1 rounded text-xs font-medium">${payment.status || 'pending'}</div>
+          <div style="background:${statusColor};color:white" class="px-3 py-1 rounded text-xs font-medium">${payment.status === 'pending_admin_confirmation' ? '⏳ Pending' : payment.status === 'confirmed' ? '✓ Confirmed' : '✗ Rejected'}</div>
         </div>
         <div style="color:var(--secondary)" class="text-xs space-y-1 mb-4">
           <p><strong>Amount:</strong> $${payment.amount_usd}</p>
-          <p><strong>Wallet:</strong> ${payment.wallet_address || 'N/A'}</p>
+          <p><strong>Method:</strong> ${payment.method}</p>
+          <p><strong>Wallet/Address:</strong> ${payment.wallet_address || 'N/A'}</p>
           <p><strong>Date:</strong> ${new Date(payment.created_at).toLocaleDateString()}</p>
         </div>
         <div class="flex gap-2" data-payment-id="${payment._id || payment.id}">
-          <button class="approve-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#16a34a;color:white">Approve</button>
-          <button class="reject-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#dc2626;color:white">Reject</button>
+          <button class="approve-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#16a34a;color:white">✓ Approve</button>
+          <button class="reject-payment px-3 py-1.5 rounded text-xs font-medium" style="background:#dc2626;color:white">✗ Reject</button>
         </div>
       `;
       list.appendChild(paymentEl);
@@ -379,7 +395,7 @@ let logoDataUrl = '';
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'confirmed' })
           });
-          showToast('Payment approved');
+          showToast('✓ Payment approved!');
           loadPendingPayments();
         } catch (err) {
           console.error(err);
@@ -398,7 +414,7 @@ let logoDataUrl = '';
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'rejected' })
           });
-          showToast('Payment rejected');
+          showToast('✗ Payment rejected');
           loadPendingPayments();
         } catch (err) {
           console.error(err);
@@ -493,6 +509,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTools();
   loadPendingPayments();
   lucide.createIcons();
+
+  // Auto-refresh payments every 10 seconds
+  setInterval(() => {
+    loadPendingPayments();
+  }, 10000);
 
   const cat = document.getElementById('toolCategory');
   if (cat) {
